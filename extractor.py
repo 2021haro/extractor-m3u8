@@ -17,7 +17,7 @@ async def main():
         
         try:
             # REEMPLAZA ESTA URL POR LA DE TU PÁGINA WEB OBJETIVO
-            await page.goto("https://universoreality.com/", timeout=60000)
+            await page.goto("https://laurared.duckdns.org:40522/?_nocache=1790040160416", timeout=60000)
             await page.wait_for_timeout(10000)
         except Exception as e:
             print("Error cargando la página:", e)
