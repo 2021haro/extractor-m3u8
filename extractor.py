@@ -1,40 +1,71 @@
-name: Auto Extractor m3u8
+import asyncio
+import re
+from playwright.async_api import async_playwright
 
-on:
-  schedule:
-    - cron: '0 */6 * * *'
-  workflow_dispatch:
+async def main():
+    # 1. Crear el archivo url.txt de inmediato al iniciar el script por seguridad
+    with open("url.txt", "w", encoding="utf-8") as f:
+        f.write("Iniciando busqueda de enlaces m3u8...\n")
 
-jobs:
-  run-extractor:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      
-    steps:
-      - name: Checkout del repositorio
-        uses: actions/checkout@v4
+    found_urls = set()
+    
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+        )
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        )
+        page = await context.new_page()
+        
+        def handle_request(request):
+            if ".m3u8" in request.url:
+                found_urls.add(request.url)
 
-      - name: Configurar Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
+        page.on("request", handle_request)
+        
+        try:
+            print("1. Entrando a universoreality.com...")
+            await page.goto("https://universoreality.com/", timeout=60000)
+            
+            print("2. Esperando el botón de cámaras...")
+            await page.wait_for_selector("#btn-camaras", timeout=20000)
+            
+            print("3. Haciendo clic en el botón de cámaras...")
+            await page.click("#btn-camaras")
+            
+            # Esperar a que cargue la nueva página de DuckDNS
+            await page.wait_for_timeout(6000)
+            
+            # Buscar botones de cámaras en la nueva página
+            buttons = await page.locator("button.camera-btn").all()
+            print(f"Botones de cámara encontrados: {len(buttons)}")
+            
+            for btn in buttons:
+                onclick_attr = await btn.get_attribute("onclick")
+                if onclick_attr:
+                    urls = re.findall(r"['\"](https?://[^'\"]+\.m3u8[^'\"]*)['\"]", onclick_attr)
+                    for u in urls:
+                        found_urls.add(u)
+                        
+            # Si no se obtuvieron por el atributo, simulamos clics en los botones
+            if not found_urls and buttons:
+                print("Haciendo clic en las cámaras para forzar la captura...")
+                for btn in buttons:
+                    await btn.click()
+                    await page.wait_for_timeout(3000)
+                    
+        except Exception as e:
+            print(f"Aviso durante el proceso: {e}")
+            
+        await browser.close()
+        
+    # 2. Si se encontraron URLs reales, sobrescribimos el archivo con ellas
+    if found_urls:
+        print(f"¡URLs encontradas!: {list(found_urls)}")
+        with open("url.txt", "w", encoding="utf-8") as f:
+            for u in sorted(found_urls):
+                f.write(f"{u}\n")
 
-      - name: Instalar dependencias y navegador
-        run: |
-          pip install playwright
-          playwright install chromium
-          playwright install-deps
-
-      - name: Ejecutar script de extracción
-        run: python extractor.py
-
-      - name: Asegurar archivo url.txt
-        run: touch url.txt
-
-      - name: Guardar y actualizar en GitHub
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.io"
-          git add url.txt
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Actualizar URL m3u8 automática" && git push)
+asyncio.run(main())
