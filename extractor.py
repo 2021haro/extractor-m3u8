@@ -2,7 +2,7 @@ import re
 import requests
 
 def main():
-    # 1. Crear el archivo url.txt de inmediato por seguridad
+    # 1. Crear el archivo url.txt de inmediato al iniciar por seguridad
     with open("url.txt", "w", encoding="utf-8") as f:
         f.write("Iniciando busqueda de enlaces m3u8...\n")
 
