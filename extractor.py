@@ -16,11 +16,23 @@ async def main():
         page.on("request", handle_request)
         
         try:
-            # REEMPLAZA ESTA URL POR LA DE TU PÁGINA WEB OBJETIVO
+            # 1. Entra a la página web
             await page.goto("https://laurared.duckdns.org:40522/?_nocache=1790040160416", timeout=60000)
+            
+            # 2. ESPERAR Y HACER CLIC EN EL BOTÓN DE REPRODUCIR
+            # (Elige una de las dos opciones de abajo según te convenga)
+            
+            # Opción A: Si el botón tiene un texto visible como "Play", "Reproducir", "Ver", etc.
+            await page.get_by_text("CAM 1", exact=False).click(timeout=10000)
+            
+            # Opción B (Comenta la A y descomenta esta si prefieres usar un selector CSS o ID):
+            # await page.click("#btn-play", timeout=10000)
+            
+            # 3. Esperar unos segundos después del clic para que capture el m3u8
             await page.wait_for_timeout(10000)
+            
         except Exception as e:
-            print("Error cargando la página:", e)
+            print("Error durante la ejecución:", e)
             
         await browser.close()
         
