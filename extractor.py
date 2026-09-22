@@ -1,71 +1,78 @@
+import asyncio
 import re
-import requests
+from playwright.async_api import async_playwright
 
-def main():
-    print("🚀 Iniciando script de extracción...")
-    
-    # Crear el archivo url.txt de inmediato para evitar errores de Git
+async def main():
+    # 1. Crear el archivo url.txt de inmediato para blindar Git ante cualquier fallo
     with open("url.txt", "w", encoding="utf-8") as f:
-        f.write("Iniciando busqueda...\n")
+        f.write("Iniciando extraccion con navegador...\n")
 
     found_urls = set()
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept-Language": "es-ES,es;q=0.9",
-    }
 
-    try:
-        print("1. Consultando universoreality.com...")
-        response = requests.get("https://universoreality.com/", headers=headers, timeout=30)
-        print(f"📡 Código HTTP principal: {response.status_code}")
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+        )
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        )
+        page = await context.new_page()
 
-        if response.status_code != 200:
-            print(f"⚠️ La página principal respondió con estado: {response.status_code}")
-            return
+        # Interceptar peticiones de red por si el reproductor carga el m3u8 dinámicamente
+        def handle_request(request):
+            if ".m3u8" in request.url:
+                found_urls.add(request.url)
 
-        html_main = response.text
+        page.on("request", handle_request)
 
-        # Buscar el enlace (href) del botón #btn-camaras
-        match_href = re.search(r'id=["\']btn-camaras["\'][^>]*href=["\']([^"\']+)["\']', html_main)
-        if not match_href:
-            match_href = re.search(r'href=["\']([^"\']+)["\'][^>]*id=["\']btn-camaras["\']', html_main)
+        try:
+            print("1. Entrando a universoreality.com...")
+            await page.goto("https://universoreality.com/", timeout=60000)
 
-        if match_href:
-            camaras_url = match_href.group(1)
-            print(f"2. 🔗 Enlace de cámaras encontrado: {camaras_url}")
+            print("2. Esperando el botón de cámaras (#btn-camaras)...")
+            await page.wait_for_selector("#btn-camaras", timeout=20000)
 
-            # Consultar la página de las cámaras (DuckDNS)
-            print("3. Consultando la página dinámica de cámaras...")
-            resp_cam = requests.get(camaras_url, headers=headers, timeout=30)
-            print(f"📡 Código HTTP cámaras: {resp_cam.status_code}")
+            print("3. Haciendo clic en el botón de cámaras...")
+            # Usamos expect_navigation para esperar que abra la nueva página de DuckDNS
+            async with page.expect_navigation(timeout=30000):
+                await page.click("#btn-camaras")
 
-            html_cam = resp_cam.text
+            print("4. Esperando a que carguen los botones de cámara...")
+            await page.wait_for_selector("button.camera-btn", timeout=20000)
+            await page.wait_for_timeout(3000)
 
-            # Buscar todas las URLs .m3u8 en el código fuente de las cámaras
-            m3u8_matches = re.findall(r'https?://[^\s\'"]+\.m3u8[^\s\'"]*', html_cam)
-            print(f"🔍 Coincidencias m3u8 detectadas: {len(m3u8_matches)}")
+            # Extraer las URLs directamente de los atributos onclick de los botones
+            buttons = await page.locator("button.camera-btn").all()
+            print(f"Botones de cámara detectados: {len(buttons)}")
 
-            for u in m3u8_matches:
-                clean_url = re.sub(r'[\'").]+$', '', u)
-                found_urls.add(clean_url)
-        else:
-            print("⚠️ No se encontró el botón #btn-camaras. Buscando m3u8 directamente en la principal...")
-            m3u8_matches = re.findall(r'https?://[^\s\'"]+\.m3u8[^\s\'"]*', html_main)
-            for u in m3u8_matches:
-                found_urls.add(re.sub(r'[\'").]+$', '', u))
+            for btn in buttons:
+                onclick_attr = await btn.get_attribute("onclick")
+                if onclick_attr:
+                    urls = re.findall(r"['\"](https?://[^'\"]+\.m3u8[^'\"]*)['\"]", onclick_attr)
+                    for u in urls:
+                        found_urls.add(u)
 
-    except Exception as e:
-        print(f"❌ Ocurrió un error durante la petición: {e}")
+            # Si por alguna razón el atributo no bastó, hacemos clic en cada cámara para forzar el tráfico
+            if not found_urls and buttons:
+                print("Forzando clics en las cámaras...")
+                for btn in buttons:
+                    await btn.click()
+                    await page.wait_for_timeout(2000)
 
-    # Escribir los resultados finales en url.txt
+        except Exception as e:
+            print(f"⚠️ Aviso durante la ejecución del navegador: {e}")
+
+        await browser.close()
+
+    # 2. Guardar los resultados definitivos en url.txt
     with open("url.txt", "w", encoding="utf-8") as f:
         if found_urls:
-            print(f"✅ ¡URLs encontradas y guardadas!: {list(found_urls)}")
+            print(f"✅ ¡URLs encontradas con éxito!: {list(found_urls)}")
             for u in sorted(found_urls):
                 f.write(f"{u}\n")
         else:
-            print("⚠️ No se encontraron enlaces m3u8 en esta ejecución.")
-            f.write("No se encontraron enlaces m3u8 en esta ejecución.\n")
+            print("⚠️ No se capturó ningún m3u8 en esta ejecución.")
+            f.write("No se encontro ningun m3u8 en esta ejecucion.\n")
 
-if __name__ == "__main__":
-    main()
+asyncio.run(main())
