@@ -1,2 +1,1 @@
-https://queputasteimporta.duckdns.org:60822/hls/canal.m3u8
-https://queputasteimporta.duckdns.org:60822/hls/canal2.m3u8
+No se encontro ningun m3u8 en esta ejecucion.
