@@ -8,7 +8,6 @@ async def main():
             headless=True,
             args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
         )
-        
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
@@ -29,46 +28,43 @@ async def main():
             print("2. Esperando el botón de cámaras...")
             await page.wait_for_selector("#btn-camaras", timeout=20000)
             
-            print("3. Haciendo clic y esperando la nueva página de DuckDNS...")
-            # Esperamos a que la navegación ocurra tras el clic
-            async with page.expect_navigation(timeout=30000):
-                await page.click("#btn-camaras")
+            print("3. Haciendo clic en el botón de cámaras...")
+            await page.click("#btn-camaras")
             
-            print("4. Esperando a que carguen los botones de las cámaras...")
-            await page.wait_for_selector("button.camera-btn", timeout=20000)
+            # Esperar a que cargue la nueva página de DuckDNS
+            await page.wait_for_timeout(6000)
             
-            # Extraer las URLs de los atributos onclick de cada cámara
+            # Buscar botones de cámaras en la nueva página
             buttons = await page.locator("button.camera-btn").all()
-            print(f"Se encontraron {len(buttons)} botones de cámaras.")
+            print(f"Botones de cámara encontrados: {len(buttons)}")
             
             for btn in buttons:
                 onclick_attr = await btn.get_attribute("onclick")
                 if onclick_attr:
-                    urls_in_onclick = re.findall(r"['\"](https?://[^'\"]+\.m3u8[^'\"]*)['\"]", onclick_attr)
-                    for u in urls_in_onclick:
+                    urls = re.findall(r"['\"](https?://[^'\"]+\.m3u8[^'\"]*)['\"]", onclick_attr)
+                    for u in urls:
                         found_urls.add(u)
                         
             # Si no se obtuvieron por el atributo, simulamos clics en los botones
             if not found_urls and buttons:
-                print("Haciendo clic en los botones para forzar la captura por red...")
+                print("Haciendo clic en las cámaras para forzar la captura...")
                 for btn in buttons:
                     await btn.click()
                     await page.wait_for_timeout(3000)
                     
         except Exception as e:
-            print(f"❌ Ocurrió un error durante el proceso: {e}")
+            print(f"Aviso durante el proceso: {e}")
             
         await browser.close()
         
-        # Guardar resultados asegurando que el archivo url.txt siempre se cree
+        # Escribir siempre el archivo url.txt para evitar errores de Git
         print("Guardando resultados en url.txt...")
-        with open("url.txt", "w") as f:
+        with open("url.txt", "w", encoding="utf-8") as f:
             if found_urls:
-                print(f"¡URLs encontradas con éxito!: {list(found_urls)}")
+                print(f"¡URLs encontradas!: {list(found_urls)}")
                 for u in sorted(found_urls):
                     f.write(f"{u}\n")
             else:
-                print("⚠️ No se encontró ningún m3u8, se guardará aviso.")
-                f.write("No se encontro ningun m3u8 en esta ejecucion.\n")
+                f.write("No se encontraron enlaces m3u8 en esta ejecucion.\n")
 
 asyncio.run(main())
