@@ -4,12 +4,18 @@ from playwright.async_api import async_playwright
 
 async def main():
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+        )
+        
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        )
+        page = await context.new_page()
         
         found_urls = set()
         
-        # Interceptor de red por si el reproductor los carga mediante peticiones
         def handle_request(request):
             if ".m3u8" in request.url:
                 found_urls.add(request.url)
@@ -17,46 +23,52 @@ async def main():
         page.on("request", handle_request)
         
         try:
-            # 1. Entrar a la página principal
-            print("Entrando a universoreality.com...")
+            print("1. Entrando a universoreality.com...")
             await page.goto("https://universoreality.com/", timeout=60000)
             
-            # 2. Hacer clic en el botón de cámaras usando su ID exacto (#btn-camaras)
-            print("Haciendo clic en el botón de cámaras...")
-            await page.click("#btn-camaras", timeout=10000)
+            print("2. Esperando el botón de cámaras...")
+            await page.wait_for_selector("#btn-camaras", timeout=20000)
             
-            # 3. Esperar a que cargue la nueva página dinámicamente
-            await page.wait_for_load_state("networkidle", timeout=15000)
+            print("3. Haciendo clic y esperando la nueva página de DuckDNS...")
+            # Esperamos a que la navegación ocurra tras el clic
+            async with page.expect_navigation(timeout=30000):
+                await page.click("#btn-camaras")
             
-            # 4. Extraer las URLs directamente de los atributos onclick de los botones (como en tu Imagen 1)
+            print("4. Esperando a que carguen los botones de las cámaras...")
+            await page.wait_for_selector("button.camera-btn", timeout=20000)
+            
+            # Extraer las URLs de los atributos onclick de cada cámara
             buttons = await page.locator("button.camera-btn").all()
+            print(f"Se encontraron {len(buttons)} botones de cámaras.")
+            
             for btn in buttons:
                 onclick_attr = await btn.get_attribute("onclick")
                 if onclick_attr:
-                    # Extraer cualquier URL m3u8 dentro del atributo onclick
                     urls_in_onclick = re.findall(r"['\"](https?://[^'\"]+\.m3u8[^'\"]*)['\"]", onclick_attr)
                     for u in urls_in_onclick:
                         found_urls.add(u)
-            
-            # 5. Si por alguna razón no se capturaron estáticamente, hacemos clic en cada botón para forzar la red
+                        
+            # Si no se obtuvieron por el atributo, simulamos clics en los botones
             if not found_urls and buttons:
-                print("Forzando clics en los botones de cámara...")
+                print("Haciendo clic en los botones para forzar la captura por red...")
                 for btn in buttons:
                     await btn.click()
-                    await page.wait_for_timeout(2000)
+                    await page.wait_for_timeout(3000)
                     
         except Exception as e:
-            print("Error durante el proceso:", e)
+            print(f"❌ Ocurrió un error durante el proceso: {e}")
             
         await browser.close()
         
-        # Guardar todas las URLs encontradas en el archivo url.txt (separadas por saltos de línea)
-        if found_urls:
-            print(f"¡URLs encontradas con éxito!: {list(found_urls)}")
-            with open("url.txt", "w") as f:
+        # Guardar resultados asegurando que el archivo url.txt siempre se cree
+        print("Guardando resultados en url.txt...")
+        with open("url.txt", "w") as f:
+            if found_urls:
+                print(f"¡URLs encontradas con éxito!: {list(found_urls)}")
                 for u in sorted(found_urls):
                     f.write(f"{u}\n")
-        else:
-            print("No se encontró ningún m3u8.")
+            else:
+                print("⚠️ No se encontró ningún m3u8, se guardará aviso.")
+                f.write("No se encontro ningun m3u8 en esta ejecucion.\n")
 
 asyncio.run(main())
