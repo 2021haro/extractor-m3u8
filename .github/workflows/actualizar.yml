@@ -29,6 +29,9 @@ jobs:
       - name: Ejecutar script de extracción
         run: python extractor.py
 
+      - name: Asegurar archivo url.txt
+        run: touch url.txt
+
       - name: Guardar y actualizar en GitHub
         run: |
           git config --global user.name "github-actions[bot]"
